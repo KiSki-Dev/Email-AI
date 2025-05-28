@@ -131,7 +131,7 @@ links = {
 }
 
 send_markdown_reply(
-    banner_top_url="https://via.placeholder.com/600x100/333333/8ED1FC?text=Top+Banner",
+    banner_top_url="https://placehold.co/600x100",
     title="Dein persönlicher Bericht",
     modell="GPT-4 Turbo",
     plan="Pro",
@@ -140,5 +140,5 @@ send_markdown_reply(
     body_md=md_text,
     message_id="1234567890abcdef",
     links=links,
-    banner_bottom_url="https://via.placeholder.com/600x50/333333/8ED1FC?text=Bottom+Banner"
+    banner_bottom_url="https://placehold.co/600x50"
 )
