@@ -1,0 +1,23 @@
+[
+  {
+    "user_id": "123",
+    "email": "dev@test.com",
+    "plan": "developer",
+    "tokens": 1000,
+    "model": "gemini-2.0-flash"
+  },
+  {
+    "user_id": "456",
+    "email": "premium@test.com",
+    "plan": "premium",
+    "tokens": 250,
+    "model": "gemini-2.0-flash"
+  },
+  {
+    "user_id": "789",
+    "email": "free@gmail.com",
+    "plan": "free",
+    "tokens": 50,
+    "model": "gemini-2.0-flash"
+  }
+]
