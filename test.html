@@ -1,0 +1,110 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Dein persönlicher Bericht</title>
+  <style>
+    body { margin:0; padding:0; background-color:#1E1E1E; color:#D4D4D4; font-family:'Segoe UI', Tahoma, sans-serif; }
+    a { color:#8ED1FC; }
+    .banner { text-align:center; padding:20px 0; }
+    .banner img { max-width:600px; width:90%; height:auto; border-radius:8px; }
+    h1 { font-size:32px; color:#8ED1FC; text-align:center; margin:30px 0 10px; }
+    .info-row { font-size:18px; text-align:center; margin:5px 0; }
+    .info-row span { margin:0 20px; color:#C0C0C0; }
+    .body-container { 
+      background-color:#2A2A2A; 
+      margin:0 20px 30px 20px; 
+      padding:25px; 
+      border-radius:8px; 
+      box-shadow:0 3px 6px rgba(0,0,0,0.5); 
+      font-size:13px; 
+      line-height:1.6; 
+      color:#E0E0E0; 
+    }
+    .message-id { font-size:12px; color:#777; text-align:right; margin:0 20px 20px 20px; }
+    .links-row { text-align:center; margin-bottom:30px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top-Banner -->
+  <div class="banner" style="background:#111111;">
+    <img src="https://via.placeholder.com/600x100/333333/8ED1FC?text=Top+Banner" alt="Banner oben">
+  </div>
+
+  <!-- Titel -->
+  <h1>Dein persönlicher Bericht</h1>
+
+  <!-- Nutzer-Infos -->
+  <div class="info-row">
+    <span><strong>Modell:</strong> GPT-4 Turbo</span>
+    <span><strong>Plan:</strong> Pro</span>
+  </div>
+
+  <!-- Token-Infos -->
+  <div class="info-row" style="margin-bottom:30px;">
+    <span><strong>Token-Kosten:</strong> 1234</span>
+    <span><strong>Übrige Token:</strong> 4321</span>
+  </div>
+
+  <!-- Markdown-Body -->
+  <div class="body-container">
+    <p>Hallo! Gerne erkläre ich dir kurz, was Tokens bei KI-Modellen (insbesondere bei Sprachmodellen) sind:</p>
+<p><strong>Was sind Tokens?</strong></p>
+<ul>
+<li>
+<p><strong>Grundbausteine:</strong> Tokens sind die kleinsten Einheiten, in die ein KI-Modell Text zerlegt, bevor es ihn verarbeitet. Du kannst sie dir als die "Wörter" oder "Wortteile" vorstellen, die das Modell versteht und mit denen es arbeitet.</p>
+</li>
+<li>
+<p><strong>Keine reinen Wörter:</strong> Ein Token muss nicht unbedingt ein ganzes Wort sein. Es kann auch ein Teil eines Wortes, ein Satzzeichen oder ein Leerzeichen sein.</p>
+</li>
+<li>
+<p><strong>Beispiele:</strong></p>
+<ul>
+<li>Der Satz: "Hallo, wie geht es dir?" könnte in folgende Tokens zerlegt werden: <code>["Hallo", ",", " wie", " geht", " es", " dir", "?"]</code></li>
+<li>Das Wort "unverständlich" könnte in Tokens wie <code>["un", "ver", "ständ", "lich"]</code> zerlegt werden.</li>
+</ul>
+</li>
+</ul>
+<p><strong>Wie funktionieren Tokens bei KI-Modellen?</strong></p>
+<ol>
+<li>
+<p><strong>Tokenisierung:</strong> Der erste Schritt ist die <strong>Tokenisierung</strong>. Dabei wird der Eingabetext (z.B. deine Frage) in eine Sequenz von Tokens zerlegt. Dieser Prozess wird von einem speziellen Programm, dem <strong>Tokenizer</strong>, durchgeführt.</p>
+</li>
+<li>
+<p><strong>Numerische Darstellung:</strong> Jedes Token wird dann einer eindeutigen <strong>Zahl</strong> zugeordnet. Das KI-Modell arbeitet intern mit diesen Zahlen, nicht mit den Text-Tokens selbst.  Eine Tabelle (Vokabular), die jedes Token mit einer Zahl verknüpft, ist die Grundlage dafür.</p>
+</li>
+<li>
+<p><strong>Verarbeitung:</strong> Das KI-Modell verarbeitet diese Zahlenfolge, um den Kontext zu verstehen und eine Antwort zu generieren.</p>
+</li>
+<li>
+<p><strong>Generierung:</strong> Bei der Generierung von Text wandelt das Modell ebenfalls Zahlen in Tokens um. Diese Tokens werden dann wieder zu lesbarem Text zusammengesetzt.</p>
+</li>
+</ol>
+<p><strong>Warum werden Tokens verwendet?</strong></p>
+<ul>
+<li><strong>Effizienz:</strong> Die Verarbeitung von Zahlen ist für Computer effizienter als die Verarbeitung von Text.</li>
+<li><strong>Vokabularbegrenzung:</strong> KI-Modelle haben ein begrenztes Vokabular (die Menge der Tokens, die sie kennen). Durch die Zerlegung in Tokens kann ein Modell auch mit Wörtern umgehen, die nicht direkt in seinem Vokabular enthalten sind.</li>
+<li><strong>Bessere Kontextanalyse:</strong> Die Tokenisierung hilft dem Modell, den Kontext von Wörtern besser zu verstehen. Z. B. kann es "Bank" als "Sitzgelegenheit" oder "Finanzinstitut" erkennen, je nachdem, welche Tokens drumherum stehen.</li>
+</ul>
+<p><strong>Zusammenfassend:</strong> Tokens sind die kleinen Einheiten, in die Text zerlegt wird, damit KI-Modelle ihn verstehen und verarbeiten können. Sie sind wichtig für die Effizienz, die Kontextanalyse und die Fähigkeit der Modelle, mit unbekannten Wörtern umzugehen.</p>
+<p>Ich hoffe, das hilft dir weiter! Lass es mich wissen, wenn du noch Fragen hast.</p>
+  </div>
+
+  <!-- Message-ID -->
+  <div class="message-id">
+    Message-ID: 1234567890abcdef
+  </div>
+
+  <!-- Links -->
+  <div class="links-row">
+    <a href="https://example.com" style="margin:0 10px; text-decoration:none; color:#8ED1FC; font-weight:bold;">Webseite</a> <a href="https://example.com/dashboard" style="margin:0 10px; text-decoration:none; color:#8ED1FC; font-weight:bold;">Dashboard</a> <a href="https://discord.gg/example" style="margin:0 10px; text-decoration:none; color:#8ED1FC; font-weight:bold;">Discord</a>
+  </div>
+
+  <!-- Bottom-Banner -->
+  <div class="banner" style="background:#111111;">
+    <img src="https://via.placeholder.com/600x50/333333/8ED1FC?text=Bottom+Banner" alt="Banner unten">
+  </div>
+
+</body>
+</html>

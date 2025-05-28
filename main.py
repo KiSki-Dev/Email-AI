@@ -32,7 +32,7 @@ LABEL_PROGRESSING = 'Label_5310290292504501863'
 LABEL_BROKEN = 'Label_55889426924201303'
 LABEL_NOT_REGISTERED = 'Label_6688557498746066945'
 
-client = genai.Client(api_key="")
+client = genai.Client(api_key="AIzaSyBSz8gZ_0cfnibNeuthcjq-1KqD-YV8LSs")
 
 def authenticate_gmail():
     creds = None
@@ -93,17 +93,41 @@ def count_tokens(content, model):
     total_tokens = client.models.count_tokens(model=model, contents=content)
     return total_tokens
 
+
+def ask_AI(model, content):
+    try:
+        response = client.models.generate_content(
+            model=model, contents=content
+        )
+        if response.text:
+            return response
+        else:
+            print("No answer received from AI.")
+            return None
+    except Exception as e:
+        print(f"Error generating AI content: {e}")
+        return None
+
 def send_reply(service, to, subject, message_text, thread_id, message_id):
-    message = MIMEText(message_text)
+    html_content = f"""
+
+
+
+    """
+
+
+    message = MIMEText(html_content, "html")
     message['to'] = to
     message['subject'] = subject
     message['In-Reply-To'] = message_id
     message['References'] = message_id
     raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
     body = {'raw': raw_message, 'threadId': thread_id}
+    
     try:
         sent_message = service.users().messages().send(userId='me', body=body).execute()
         print(f'Send Answer: {sent_message["id"]}')
+
     except Exception as error:
         print(f'A error happened: {error}')
 
@@ -136,18 +160,24 @@ def handle_message(service, message):
             return
 
         print(user)
+        print("Body: " + body)
 
         model = user["model"]
 
         tokens = count_tokens(body, model)
-        print(f"Tokens in body: {tokens}")
+        
 
+        answer = ask_AI(model, body)
+        if not answer:
+            print(f"Error: No answer generated for message {msg_id}.")
+            mark_as_broken(service, msg_id)
+            return
+        print("Total Tokens: " + answer.total_token_count)
 
-        # Send an automated reply
-        antwort_text = "Vielen Dank für Ihre Nachricht. Wir werden uns in Kürze bei Ihnen melden."
-        send_reply(service, sender, subject, antwort_text, thread_id, message_id)
-
+        # Send AI-generated reply
+        send_reply(service, sender, subject, answer.text, thread_id, message_id)
         mark_as_answered(service, msg_id)
+
     except Exception as e:
         print(f"A error happened. {msg_id}: {e}")
         mark_as_broken(service, msg_id)
