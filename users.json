@@ -2,22 +2,22 @@
   {
     "user_id": "123",
     "email": "dev@test.com",
-    "plan": "developer",
+    "plan": "Developer",
     "tokens": 1000,
     "model": "gemini-2.0-flash"
   },
   {
     "user_id": "456",
-    "email": "premium@protonmail.com",
-    "plan": "premium",
+    "email": "premium@test.com",
+    "plan": "Premium",
     "tokens": 250,
     "model": "gemini-2.0-flash"
   },
   {
     "user_id": "789",
-    "email": "free@gmail.com",
-    "plan": "free",
-    "tokens": 50,
+    "email": "free@test.com",
+    "plan": "Free",
+    "tokens": 1000,
     "model": "gemini-2.0-flash"
   }
 ]

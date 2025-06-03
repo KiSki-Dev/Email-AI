@@ -1,15 +1,19 @@
 import os.path
 import base64
-import email
 import threading
 import time
-import sys
 import json
 import markdown
 import os
+import sys
 from dotenv import load_dotenv
+import requests
+import re
 
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -20,10 +24,51 @@ from google import genai
 load_dotenv()
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
-LABEL_ANSWERED = 'Label_1030359169377715795'
-LABEL_PROGRESSING = 'Label_5310290292504501863'
-LABEL_BROKEN = 'Label_55889426924201303'
-LABEL_NOT_REGISTERED = 'Label_6688557498746066945'
+
+models = {
+    "gemini-2.0-flash": {
+        "active": True,
+        "name": "Google Gemini 2.0 Flash",
+        "perm_level_required": 0,
+        "context_per_hour": 1000000,
+        "search_per_hour": 500
+    },
+    "gemini-2.5-flash-preview-05-20": {
+        "active": True,
+        "name": "Google Gemini 2.5 Flash Preview",
+        "perm_level_required": 1,
+        "context_per_hour": 0,
+        "search_per_hour": 500
+    },
+    "gemini-2.5-pro-preview-05-06": {
+        "active": False,
+        "name": "Google Gemini 2.5 Pro Preview",
+        "perm_level_required": 2,
+        "context_per_hour": 0,
+        "search_per_hour": 0
+    },
+    "gemini-1.5-flash": {
+        "active": True,
+        "name": "Google Gemini 1.5 Flash",
+        "perm_level_required": 0,
+        "context_per_hour": 1000000,
+        "search_per_hour": 0
+    },
+    "gemini-1.5-pro": {
+        "active": True,
+        "name": "Google Gemini 1.5 Pro",
+        "perm_level_required": 0,
+        "context_per_hour": 0,
+        "search_per_hour": 0
+    }
+}
+
+no_messages_count = 0
+
+#? LABEL_ANSWERED = 'Label_1030359169377715795'
+#? LABEL_PROGRESSING = 'Label_5310290292504501863'
+#? LABEL_BROKEN = 'Label_55889426924201303'
+#? LABEL_NOT_REGISTERED = 'Label_6688557498746066945'
 
 client = genai.Client(api_key=os.getenv('gemini_API_key'))
 
@@ -32,7 +77,7 @@ def authenticate_gmail():
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
 
-    # When no Local Credentials are available, we need to re-authenticate
+    #! When no Local Credentials are available, we need to re-authenticate
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -44,12 +89,14 @@ def authenticate_gmail():
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
     
-    # Create the Gmail service
-    service = build('gmail', 'v1', credentials=creds)
+    service = build('gmail', 'v1', credentials=creds) #* Create the Gmail service
+    if not service:
+        sys.exit("Failed to create Gmail service. Please check your credentials and try again.")
+    print(f"Gmail service authenticated successfully.")
     return service
 
 def get_unread_messages(service):
-    results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=10).execute()
+    results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=5).execute()
     messages = results.get('messages', [])
     return messages
 
@@ -82,59 +129,123 @@ def get_message_details(service, msg_id):
     thread_id = msg.get('threadId')
     return subject, sender, body, message_id, thread_id
 
+def extract_details_from_subject(subject, default_model):
+    s = subject.lower()
+
+    for sep in [",", ";", "_", "/"]: #* Replace common separators with a space
+        s = s.replace(sep, " ")
+
+    sorted_models = sorted(list(models.keys()), key=lambda m: len(m), reverse=True) #* Sort models by length to match longer names first
+
+    found_model = None
+    for modell in sorted_models:
+        if modell in s:
+            found_model = modell
+            break
+
+    if not found_model:
+        found_model = default_model #* If no model found, set to default
+
+    #* Check for Parameters in subject
+    has_reasoning = bool(re.search(r"\breasoning\b", s))
+
+    #* Check for ID in subject.
+    #ToDo: Implement IDs/Context Chache
+    # match_id = re.search(r"\bid-(\d+)\b", s)
+    # extracted_id = match_id.group(1) if match_id else None
+
+    #? Maybe implement? only for debugging
+    # temp = s.replace(found_model, " ")
+    # if match_id:
+    #     temp = temp.replace(match_id.group(0), " ")
+    # temp = re.sub(r"\breasoning\b", " ", temp)
+    # temp = re.sub(r"\s+", " ", temp).strip()
+    # rest_tokens = temp.split() if temp else []
+
+    return found_model, has_reasoning
+
 def count_tokens(content, model):
+    """
+    Counts the number of tokens of the Input. Not the output!
+    Might be useless later?
+    """
     total_tokens = client.models.count_tokens(model=model, contents=content)
     return total_tokens
 
-def create_email_body(answer_md, model, plan, cost, remaining_tokens, message_id):
+def mark_as_broken(service, msg_id):
+    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_55889426924201303"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
+
+def mark_as_not_registered(service, msg_id):
+    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_6688557498746066945"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
+
+def mark_as_progressing(service, msg_id):
+    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_5310290292504501863"], 'removeLabelIds': ['UNREAD']}).execute()
+
+def mark_as_answered(service, msg_id):
+    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_1030359169377715795"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
+
+def ask_AI(model, content):
+    try:
+        response = client.models.generate_content(
+            model=model, contents=content
+        )
+        if response.text:
+            return response
+        else:
+            print("No answer received from AI.")
+
+    except Exception as e:
+        print(f"Error generating AI content: {e}")
+
+
+def create_email_body(answer_md, model, plan, cost, remaining_tokens, raw_message_id):
     title = "AI Answer"
-    top_banner_url = "https://placehold.co/600x100"
-    bottom_banner_url = "https://placehold.co/600x50"
     links = {
         "GitHub": "https://github.com/KiSki-Dev",
         "Dashboard": "https://example.com/dashboard",
         "Discord": "https://discord.gg/cYqpx7dqsn"
     }
 
+    message_id = raw_message_id.replace('<', '').replace('>', '').replace('.com', '<span>.</span>com')  #* Clean up Message-ID
     answer_html = markdown.markdown(answer_md, extensions=['extra', 'sane_lists'])
     links_html = ' '.join(
-        f'<a href="{url}" style="margin:0 10px; text-decoration:none; color:#8ED1FC; font-weight:bold;">{text}</a>'
+        f'<a href="{url}" style="margin:0 10px; text-decoration:none; color:#38b0fa; font-weight:bold;">{text}</a>'
         for text, url in links.items()
     )
 
-    x = f"""\
+    return (f"""\
 <!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="UTF-8">
   <title>{title} - Email-AI</title>
   <style>
-    body {{ margin:0; padding:0; background-color:#1E1E1E; color:#D4D4D4; font-family:'Segoe UI', Tahoma, sans-serif; }}
+    body {{ margin:0; padding:0; background-color:#f0f9ff; color:#D4D4D4; font-family:'Segoe UI', Tahoma, sans-serif; }}
     a {{ color:#8ED1FC; }}
     .banner {{ text-align:center; }}
     .banner img {{ width:100%; height:100%; max-height: calc(100vw - 50px); border-radius:3px; }}
-    h1 {{ font-size:32px; color:#8ED1FC; text-align:center; margin:30px 0 10px; }}
+    h1 {{ font-size:32px; color:#74c7fb; text-align:center; margin:30px 0 10px; }}
     .info-row {{ font-size:18px; text-align:center; margin:5px 0; }}
-    .info-row span {{ margin:0 20px; color:#C0C0C0; }}
+    .info-row span {{ margin:0 20px; color:#46494a; }}
     .body-container {{ 
-      background-color:#2A2A2A; 
-      margin:0 20px 30px 20px; 
+      background-color:#ebf7fe; 
+      margin:0 20px 15px 20px; 
       padding:25px; 
       border-radius:8px; 
       box-shadow:0 3px 6px rgba(0,0,0,0.5); 
       font-size:13px; 
       line-height:1.6; 
-      color:#E0E0E0; 
+      color:#080808; 
     }}
-    .message-id {{ font-size:12px; color:#777; text-align:right; margin:0 20px 20px 20px; }}
+    .message-id {{ font-size:12px; color:#777; text-align:left; margin:0 20px 20px 20px; }}
     .links-row {{ text-align:center; margin-bottom:30px; }}
   </style>
 </head>
 <body>
 
   <!-- Top-Banner -->
-  <div class="banner" style="background:#111111;">
-    <img src="{top_banner_url}" alt="top banner">
+  <div class="banner" style="background:#b4e1fd;">
+    <img src="cid:top_banner" alt="top banner"/>
   </div>
 
   <!-- Title -->
@@ -168,39 +279,42 @@ def create_email_body(answer_md, model, plan, cost, remaining_tokens, message_id
   </div>
 
   <!-- Bottom-Banner -->
-  <div class="banner" style="background:#111111;">
-    <img src="{bottom_banner_url}" alt="bottom banner">
+  <div class="banner" style="background:#b4e1fd;">
+    <img src="cid:bottom_banner" alt="bottom banner"/>
   </div>
 
 </body>
 </html>
-"""
-    return x
-    
-
-def ask_AI(model, content):
-    try:
-        response = client.models.generate_content(
-            model=model, contents=content
-        )
-        if response.text:
-            return response
-        else:
-            print("No answer received from AI.")
-            return None
-    except Exception as e:
-        print(f"Error generating AI content: {e}")
-        return None
+""")
 
 def send_reply(service, to, subject, thread_id, message_id, message_text, model, plan, cost, remaining_tokens):
+    reply_start_time = time.perf_counter()
+
     html_content = create_email_body(message_text, model, plan, cost, remaining_tokens, message_id)
-    print(html_content)
     if not html_content:
         print("Error: HTML content is empty. Cannot send reply.")
         mark_as_broken(service, message_id)
         return
+    
+    top_img = requests.get("https://placehold.co/970x40/057dc7/fff/jpg?text=Placeholder")
+    top_img_data = top_img.content
+    bottom_img = requests.get("https://placehold.co/970x20/057dc7/fff/jpg?text=Placeholder")
+    bottom_img_data = bottom_img.content
 
-    message = MIMEText(html_content, "html")
+    message = MIMEMultipart(_subtype='related')
+    html_body = MIMEText(html_content, _subtype='html')
+    message.attach(html_body)
+
+    top_img = MIMEImage(top_img_data, 'jpeg')
+    top_img.add_header('Content-Id', '<top_banner>')
+    top_img.add_header("Content-Disposition", "inline", filename="top_banner")
+    message.attach(top_img)
+
+    bottom_img = MIMEImage(bottom_img_data, 'jpeg')
+    bottom_img.add_header('Content-Id', '<bottom_banner>')
+    bottom_img.add_header("Content-Disposition", "inline", filename="bottom_banner")
+    message.attach(bottom_img)
+
     message['to'] = to
     message['subject'] = subject
     message['In-Reply-To'] = message_id
@@ -209,82 +323,113 @@ def send_reply(service, to, subject, thread_id, message_id, message_text, model,
     body = {'raw': raw_message, 'threadId': thread_id}
     
     try:
-        sent_message = service.users().messages().send(userId='me', body=body).execute()
-        print(f'Send Answer: {sent_message["id"]}')
-
+        service.users().messages().send(userId='me', body=body).execute()
+        print(f"Replying to '{message_id}'")
     except Exception as error:
         print(f'A error happened: {error}')
 
-def mark_as_broken(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': [LABEL_BROKEN], 'removeLabelIds': [LABEL_PROGRESSING]}).execute()
-
-def mark_as_not_registered(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': [LABEL_NOT_REGISTERED], 'removeLabelIds': [LABEL_PROGRESSING]}).execute()
-
-def mark_as_progressing(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': [LABEL_PROGRESSING], 'removeLabelIds': ['UNREAD']}).execute()
-
-def mark_as_answered(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': [LABEL_ANSWERED], 'removeLabelIds': [LABEL_PROGRESSING]}).execute()
+    reply_end_time = time.perf_counter()
+    print(f"Reply building and sending took {reply_end_time - reply_start_time:.2f} seconds.")
 
 def handle_message(service, message):
+    thread_start_time = time.perf_counter()
     msg_id = message['id']
     try:
         mark_as_progressing(service, msg_id)
 
         subject, sender, body, message_id, thread_id = get_message_details(service, msg_id)
         sender = sender.split('<')[1].split('>')[0]
-        print(f"Email recieved: {msg_id} - {sender} - {subject}")
 
+        #ToDo Implement Database
         users = json.load(open("users.json", "r", encoding="utf-8"))
         user = next((u for u in users if u["email"] == sender), None)
         if not user:
-            print(f"Error: No registered user with '{sender}' found in database.")
-            mark_as_not_registered(service, msg_id)
-            return
-
-        print(user)
-        print("Body: " + body)
-
-        model = user["model"]
-
-        tokens = count_tokens(body, model)
+            default_model = "gemini-2.0-flash"
+        else:
+            default_model = user["model"]
         
+        model, use_reasoning = extract_details_from_subject(subject, default_model)
 
+        if models[model]["active"] == False:
+            print(f"Model '{model}' is deactivated.")
+            return
+        if models[model]["perm_level_required"] != 0:
+            if not user:
+                print(f"Error: User '{sender}' is not registered and cant use this Model.")
+                mark_as_not_registered(service, msg_id)
+                print("="*40)
+                return
+            
+            if user["plan"] == "Premium": 
+                perm_level = 1
+            elif user["plan"] == "Developer":
+                perm_level = 2
+            else:
+                perm_level = 0
+
+            if models[model]["perm_level_required"] > perm_level:
+                print(f"Error: Model '{model}' requires a higher permission level than the user has.")
+                mark_as_broken(service, msg_id)
+                print("="*40)
+                return
+
+        #! input_tokens = count_tokens(body, model)
+
+        if not user:
+            plan = "Unregistered"
+            tokens = 420
+        else:
+            print(f'{user["plan"]} User "{user["email"]}" (ID: {user["user_id"]}) has {user["tokens"]} Tokens left.')
+            plan = user["plan"]
+            tokens = user["tokens"] 
+        
+        #* Give input to AI and receive answer
+        ai_start_time = time.perf_counter()
         answer = ask_AI(model, body)
         if not answer:
             print(f"Error: No answer generated for message {msg_id}.")
             mark_as_broken(service, msg_id)
             return
-        print("Total Tokens: " + str(answer.usage_metadata.total_token_count))
+        print(f"Costed {str(answer.usage_metadata.total_token_count)} Tokens using '{model}' model.")
+        ai_end_time = time.perf_counter()
+        print(f"AI processing took {ai_end_time - ai_start_time:.2f} seconds.")
 
-        # Send AI-generated reply
-        send_reply(service, sender, subject, thread_id, message_id, answer.text, model, user["plan"], str(answer.usage_metadata.total_token_count), user["tokens"])
+        #* Send AI-generated reply
+        send_reply(service, sender, subject, thread_id, message_id, answer.text, model, plan, str(answer.usage_metadata.total_token_count), tokens)
         mark_as_answered(service, msg_id)
 
     except Exception as e:
-        print(f"A error happened. {msg_id}: {e}")
+        print(f"A error appeared inside handle_message(). {e}")
         mark_as_broken(service, msg_id)
 
-def main():
-    service = authenticate_gmail()
+    thread_end_time = time.perf_counter()
+    print(f"Thread {threading.current_thread().name} finished in {thread_end_time - thread_start_time:.2f} seconds.")
+    print("="*40)
+
+
+def main(service):
     messages = get_unread_messages(service)
-    # print(service.users().labels().list(userId='me').execute()) # List all labels
+    global no_messages_count
     if not messages:
-        print('=== no new messages ===')
+        no_messages_count += 1
+        sys.stdout.write(f"No new messages found. [{no_messages_count}]\r")
+        sys.stdout.flush()
+
     else:
         for message in messages:
+            no_messages_count = 0
             t = threading.Thread(target=handle_message, name=f'Reply+{message['id']}', args=(service, message), daemon=True)
             t.start()
+            print(f"Thread started: {t.name}. [{time.ctime()}]")
 
 
 if __name__ == '__main__':
-    while True:
-        main()
-        time.sleep(1)
+    try:
+        service = authenticate_gmail()
+        # print(service.users().labels().list(userId='me').execute()) #! List all labels
 
-        print("Running threads:", end=' ')
-        for thread in threading.enumerate():
-            print(thread.name, end=', ')
-        print()
-        time.sleep(9)
+        while True:
+            main(service)
+            time.sleep(10)
+    except KeyboardInterrupt:
+        print(f"\n{"="*70}\nProgram terminated by user.")

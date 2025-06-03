@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Answer - Email-AI</title>
+  <style>
+    body { margin:0; padding:0; background-color:#f5fbff; color:#D4D4D4; font-family:'Segoe UI', Tahoma, sans-serif; }
+    a { color:#8ED1FC; }
+    .banner { text-align:center; }
+    .banner img { width:100%; height:100%; max-height: calc(100vw - 50px); border-radius:3px; }
+    h1 { font-size:32px; color:#74c7fb; text-align:center; margin:30px 0 10px; }
+    .info-row { font-size:18px; text-align:center; margin:5px 0; }
+    .info-row span { margin:0 20px; color:#46494a; }
+    .body-container {
+      background-color:#f0f9ff;
+      margin:0 20px 15px 20px;
+      padding:25px;
+      border-radius:8px;
+      box-shadow:0 3px 6px rgba(0,0,0,0.5);
+      font-size:13px;
+      line-height:1.6;
+      color:#080808;
+    }
+    .message-id { font-size:12px; color:#777; text-align:left; margin:0 20px 20px 20px; }
+    .links-row { text-align:center; margin-bottom:30px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top-Banner -->
+  <div class="banner" style="background:#b4e1fd;">
+    <img src="https://placehold.co/970x40/057dc7/fff/jpg?text=Placeholder" alt="top banner">
+  </div>
+
+  <!-- Title -->
+  <h1>AI Answer</h1>
+
+  <!-- User-Details -->
+  <div class="info-row">
+    <span><strong>Model:</strong> gemini-2.0-flash</span>
+    <span><strong>Plan:</strong> free</span>
+  </div>
+
+  <!-- Answer-Details -->
+  <div class="info-row" style="margin-bottom:30px;">
+    <span><strong>Cost of this Answer:</strong> 1034 Tokens</span>
+    <span><strong>Remaining:</strong> 50 Tokens</span>
+  </div>
+
+  <!-- Answer-Body -->
+  <div class="body-container">
+    <p>Redis (Remote Dictionary Server) spielt eine vielfältige Rolle in Webanwendungen und dient mehreren wichtigen Zwecken, um die Leistung, Skalierbarkeit und Benutzerfreundlichkeit zu verbessern. Hier sind die Hauptzwecke:</p>
+<p><strong>1. Caching:</strong></p>
+<ul>
+<li><strong>Session-Caching:</strong> Speichert Benutzer-Session-Daten (z. B. Login-Informationen, Warenkorbdaten) im Speicher, um Datenbankabfragen zu vermeiden und die Antwortzeiten zu beschleunigen.  Dies ist einer der häufigsten Anwendungsfälle.</li>
+<li><strong>Seiten-Caching:</strong> Speichert ganze HTML-Seiten oder Fragmente im Cache, um die Belastung des Webservers und der Datenbank zu reduzieren.  Dies ist besonders nützlich für statische oder selten aktualisierte Inhalte.</li>
+<li><strong>Datenbank-Caching:</strong> Speichert Ergebnisse häufig durchgeführter Datenbankabfragen, um die Last der Datenbank zu reduzieren und die Antwortzeiten zu verbessern.  Redis kann als "vor die Datenbank"-Cache fungieren.</li>
+<li><strong>API-Caching:</strong> Speichert die Antworten von externen APIs, um unnötige API-Aufrufe zu vermeiden und die Reaktionsfähigkeit der Anwendung zu erhöhen.</li>
+</ul>
+<p><strong>2. Datenstrukturen:</strong></p>
+<ul>
+<li><strong>Komplexe Datenverwaltung:</strong> Redis bietet eine Vielzahl von Datenstrukturen (Strings, Hashes, Listen, Sets, Sorted Sets, Streams, HyperLogLog, Georäumliche Indizes, Bitmaps/Bitfields), die effizientere und flexiblere Möglichkeiten zur Datenverwaltung ermöglichen als einfache Key-Value-Speicher.</li>
+<li><strong>Echtzeit-Datenverarbeitung:</strong> Die Datenstrukturen eignen sich gut für Echtzeit-Anwendungen, z. B. die Verfolgung von Benutzeraktivitäten, das Speichern von Ranglisten oder das Verwalten von Echtzeit-Analysen.</li>
+</ul>
+<p><strong>3. Message Brokering / Queuing:</strong></p>
+<ul>
+<li><strong>Asynchrone Aufgabenverarbeitung:</strong> Redis kann als Message Broker verwendet werden, um Aufgaben asynchron zu verarbeiten. Dies ermöglicht es der Webanwendung, schnell auf Benutzeranfragen zu reagieren, während rechenintensive oder zeitaufwändige Aufgaben im Hintergrund verarbeitet werden (z. B. E-Mail-Versand, Bildverarbeitung).</li>
+<li><strong>Pub/Sub (Publish/Subscribe):</strong> Ermöglicht die Echtzeitkommunikation zwischen verschiedenen Teilen der Anwendung oder zwischen verschiedenen Anwendungen.  Beispielsweise kann Redis für Echtzeit-Benachrichtigungen oder Chat-Funktionen verwendet werden.</li>
+</ul>
+<p><strong>4. Session-Management:</strong></p>
+<ul>
+<li><strong>Verteilte Sessions:</strong> Ermöglicht die Speicherung von Benutzer-Sessions in einem zentralen Redis-Cluster, auf den mehrere Webserver zugreifen können. Dies ist entscheidend für Webanwendungen, die auf mehreren Servern laufen (horizontale Skalierung).</li>
+<li><strong>Single Sign-On (SSO):</strong> Kann verwendet werden, um SSO-Lösungen zu implementieren, bei denen Benutzer sich einmal anmelden und dann auf mehrere Anwendungen zugreifen können, ohne sich erneut anmelden zu müssen.</li>
+</ul>
+<p><strong>5. Real-Time Analytics und Leaderboards:</strong></p>
+<ul>
+<li><strong>Zählen von Aufrufen und Metriken:</strong>  Redis ist sehr gut darin, schnell Zähler zu inkrementieren und aggregierte Metriken zu speichern, um Echtzeit-Analysen zu ermöglichen.</li>
+<li><strong>Ranglisten:</strong> Die Sorted Sets-Datenstruktur ermöglicht es, Ranglisten effizient zu verwalten und anzuzeigen.</li>
+</ul>
+<p><strong>6. Feature Flags und A/B Testing:</strong></p>
+<ul>
+<li><strong>Konfiguration:</strong> Redis kann als zentraler Ort für die Speicherung von Feature Flags und Konfigurationseinstellungen verwendet werden, so dass Änderungen ohne Neustart der Anwendung vorgenommen werden können.</li>
+<li><strong>A/B-Testing:</strong> Ermöglicht das dynamische Aktivieren oder Deaktivieren von Funktionen für verschiedene Benutzergruppen, um A/B-Tests durchzuführen.</li>
+</ul>
+<p><strong>Vorteile der Verwendung von Redis:</strong></p>
+<ul>
+<li><strong>Hohe Geschwindigkeit:</strong> Redis ist ein In-Memory-Datenspeicher, der extrem schnelle Lese- und Schreiboperationen ermöglicht.</li>
+<li><strong>Vielseitigkeit:</strong> Die verschiedenen Datenstrukturen und Funktionen machen Redis für eine Vielzahl von Anwendungsfällen geeignet.</li>
+<li><strong>Skalierbarkeit:</strong> Redis kann horizontal skaliert werden, um den Anforderungen wachsender Webanwendungen gerecht zu werden.</li>
+<li><strong>Einfache Integration:</strong> Redis lässt sich einfach in viele Programmiersprachen und Frameworks integrieren.</li>
+<li><strong>Open-Source:</strong> Redis ist Open-Source-Software und somit kostenlos nutzbar.</li>
+</ul>
+<p><strong>Zusammenfassend lässt sich sagen:</strong></p>
+<p>Redis ist ein mächtiges Werkzeug, das in Webanwendungen eingesetzt wird, um die Leistung zu verbessern, die Skalierbarkeit zu erhöhen und komplexere Funktionen zu ermöglichen.  Durch Caching, die Bereitstellung flexibler Datenstrukturen und die Unterstützung asynchroner Aufgaben trägt Redis dazu bei, Webanwendungen schneller, zuverlässiger und benutzerfreundlicher zu machen. Die richtige Wahl der Anwendungsfälle hängt stark von den spezifischen Anforderungen der Webanwendung ab.</p>
+  </div>
+
+  <!-- Message-ID -->
+  <div class="message-id">
+    Message-ID: 19718bb322cc6750
+  </div>
+
+  <!-- Links -->
+  <div class="links-row">
+    <a href="https://github.com/KiSki-Dev" style="margin:0 10px; text-decoration:none; color:#38b0fa; font-weight:bold;">GitHub</a> <a href="https://example.com/dashboard" style="margin:0 10px; text-decoration:none; color:#38b0fa; font-weight:bold;">Dashboard</a> <a href="https://discord.gg/cYqpx7dqsn" style="margin:0 10px; text-decoration:none; color:#069cf9; font-weight:bold;">Discord</a>
+  </div>
+
+  <!-- Bottom-Banner -->
+  <div class="banner" style="background:#b4e1fd;">
+    <img src="https://placehold.co/970x20" alt="bottom banner">
+  </div>
+
+</body>
+</html>
