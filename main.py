@@ -9,6 +9,8 @@ import sys
 from dotenv import load_dotenv
 import requests
 import re
+from datetime import datetime, timedelta
+import ast
 
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -20,6 +22,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 from google import genai
+from google.genai import types
+
+import pymongo
 
 load_dotenv()
 
@@ -79,21 +84,42 @@ def authenticate_gmail():
 
     #! When no Local Credentials are available, we need to re-authenticate
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+        try:
+            if creds and creds.expired and creds.refresh_token:
+                print(creds.expired, creds.refresh_token)
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', SCOPES)
+                creds = flow.run_local_server(port=0)
 
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
+            with open('token.json', 'w') as token:
+                token.write(creds.to_json())
+        except Exception as e:
+            print(f"Error during authentication: {e}\nDeleting token.json to re-authenticate. (Debug)")
+            os.remove("token.json")
+            x = authenticate_gmail()
+            return x
     
     service = build('gmail', 'v1', credentials=creds) #* Create the Gmail service
     if not service:
         sys.exit("Failed to create Gmail service. Please check your credentials and try again.")
     print(f"Gmail service authenticated successfully.")
     return service
+
+def connect_to_mongodb():
+    try:
+        mongo = pymongo.MongoClient("mongodb://localhost:27017/")
+        db = mongo["convoDB"]
+        table = db["conversations"]
+        mongo.server_info()
+        print("Connected to MongoDB successfully.")
+
+    except Exception as e:
+        print(f"Error connecting to MongoDB: {e}")
+        sys.exit("Failed to connect to MongoDB.")
+    
+    return table
 
 def get_unread_messages(service):
     results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=5).execute()
@@ -184,21 +210,97 @@ def mark_as_progressing(service, msg_id):
 def mark_as_answered(service, msg_id):
     service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_1030359169377715795"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
 
-def ask_AI(model, content):
+def ask_AI(model, content, db, thread_id, user_id):
     try:
-        response = client.models.generate_content(
-            model=model, contents=content
-        )
-        if response.text:
-            return response
-        else:
-            print("No answer received from AI.")
+        if user_id == 0:
+            response = client.models.generate_content(
+                model=model, contents=content
+            )
+            if response.text:
+                return response
+            else:
+                print("No answer received from AI.1")
+
+        result = db.find_one({"threadID": thread_id})
+        if not result:
+            print(f"No previous conversation found for thread ID: {thread_id}.")
+            response = client.models.generate_content(
+                model=model, contents=content
+            )
+            if response.text:
+                history = []
+                history.append(f"types.Content(role='user', parts=[types.Part(text='{content}')])")
+                history.append(f"types.Content(role='model', parts=[types.Part(text='{response.text}')])")
+                newConvo = { "threadID": thread_id, "user_id": user_id, "history": history, "expireAt": datetime.now() + timedelta(days=7)}
+                db.insert_one(newConvo)
+
+                return response
+            else:
+                print("No answer received from AI.2")
+
+        elif result != None:
+            history = []
+            for part in result["history"]: #! Here is error (result[history] cant be parsed this easy)
+                print(type(part), part)
+                x = eval(part)
+
+                #ToDo : separately store all data in db, not this way. (Complete rework of this segment)
+
+                print(x)
+                print(type(x))
+                # y = types.Content(**x)
+                # print(y)
+                # print(type(y))
+                history.append(x)
+
+            print("222")
+            print(history)
+            chat = client.chats.create(model=model, history=history)
+            response = chat.send_message(message=content)
+            if response.text:
+                print("333")
+                history[0] = str(history[0])
+                history[1] = str(history[1])
+                history.append(f"types.Content(role='user', text='{content}')")
+                history.append(f"types.Content(role='model', parts=[types.Part(text='{response.text}')])")
+                newValues = { "$set": { "history": history, "expireAt": datetime.now() + timedelta(days=7)}}
+                print("444")
+                db.update_one(result, newValues)
+
+                return response
+            else:
+                print("No answer received from AI.3")
+
+        # print("--"*20)
+        # chat = client.chats.create(model=model)
+        # print(f"--\n{chat.__dict__}\n--")
+
+        # response = chat.send_message(content)
+        # print(f"-- AI Response --\n{response.text}\n--")
+        # response = chat.send_message(message="Kannst du das nochmal in 1-2 Sätzen erklären?")
+        # print(f"-- AI Response 2 --\n{response.text}\n--")
+
+        # print(f"-- Chat History \n{chat.get_history()}\n--")
+        # for message in chat.get_history():
+        #     print(f'role - {message.role}',end=": ")
+        #     print(message.parts[0].text)
+
+        # print(f"--\n{chat.__dict__}\n--")
+        # print("--"*20)
+        # return response
+
+        # response = client.models.generate_content(
+        #     model=model, contents=content
+        # )
+        # if response.text:
+        #     return response
+        # else:
+        #     print("No answer received from AI.")
 
     except Exception as e:
         print(f"Error generating AI content: {e}")
 
-
-def create_email_body(answer_md, model, plan, cost, remaining_tokens, raw_message_id):
+def create_email_body(answer_md, model, plan, cost, remaining_tokens, message_id):
     title = "AI Answer"
     links = {
         "GitHub": "https://github.com/KiSki-Dev",
@@ -206,7 +308,6 @@ def create_email_body(answer_md, model, plan, cost, remaining_tokens, raw_messag
         "Discord": "https://discord.gg/cYqpx7dqsn"
     }
 
-    message_id = raw_message_id.replace('<', '').replace('>', '').replace('.com', '<span>.</span>com')  #* Clean up Message-ID
     answer_html = markdown.markdown(answer_md, extensions=['extra', 'sane_lists'])
     links_html = ' '.join(
         f'<a href="{url}" style="margin:0 10px; text-decoration:none; color:#38b0fa; font-weight:bold;">{text}</a>'
@@ -290,7 +391,7 @@ def create_email_body(answer_md, model, plan, cost, remaining_tokens, raw_messag
 def send_reply(service, to, subject, thread_id, message_id, message_text, model, plan, cost, remaining_tokens):
     reply_start_time = time.perf_counter()
 
-    html_content = create_email_body(message_text, model, plan, cost, remaining_tokens, message_id)
+    html_content = create_email_body(message_text, model, plan, cost, remaining_tokens, thread_id)
     if not html_content:
         print("Error: HTML content is empty. Cannot send reply.")
         mark_as_broken(service, message_id)
@@ -316,7 +417,7 @@ def send_reply(service, to, subject, thread_id, message_id, message_text, model,
     message.attach(bottom_img)
 
     message['to'] = to
-    message['subject'] = subject
+    message['subject'] = "Re:" + subject
     message['In-Reply-To'] = message_id
     message['References'] = message_id
     raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
@@ -324,14 +425,14 @@ def send_reply(service, to, subject, thread_id, message_id, message_text, model,
     
     try:
         service.users().messages().send(userId='me', body=body).execute()
-        print(f"Replying to '{message_id}'")
+        print(f"Replying to '{message_id}' <> '{thread_id}'")
     except Exception as error:
         print(f'A error happened: {error}')
 
     reply_end_time = time.perf_counter()
     print(f"Reply building and sending took {reply_end_time - reply_start_time:.2f} seconds.")
 
-def handle_message(service, message):
+def handle_message(service, db, message):
     thread_start_time = time.perf_counter()
     msg_id = message['id']
     try:
@@ -385,7 +486,7 @@ def handle_message(service, message):
         
         #* Give input to AI and receive answer
         ai_start_time = time.perf_counter()
-        answer = ask_AI(model, body)
+        answer = ask_AI(model, body, db, thread_id, user["user_id"] if user else 0)
         if not answer:
             print(f"Error: No answer generated for message {msg_id}.")
             mark_as_broken(service, msg_id)
@@ -407,7 +508,7 @@ def handle_message(service, message):
     print("="*40)
 
 
-def main(service):
+def main(service, db):
     messages = get_unread_messages(service)
     global no_messages_count
     if not messages:
@@ -418,7 +519,7 @@ def main(service):
     else:
         for message in messages:
             no_messages_count = 0
-            t = threading.Thread(target=handle_message, name=f'Reply+{message['id']}', args=(service, message), daemon=True)
+            t = threading.Thread(target=handle_message, name=f'Reply+{message['id']}', args=(service, db, message), daemon=True)
             t.start()
             print(f"Thread started: {t.name}. [{time.ctime()}]")
 
@@ -426,10 +527,11 @@ def main(service):
 if __name__ == '__main__':
     try:
         service = authenticate_gmail()
+        db = connect_to_mongodb()
         # print(service.users().labels().list(userId='me').execute()) #! List all labels
 
         while True:
-            main(service)
+            main(service, db)
             time.sleep(10)
     except KeyboardInterrupt:
         print(f"\n{"="*70}\nProgram terminated by user.")

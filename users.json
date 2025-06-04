@@ -8,7 +8,7 @@
   },
   {
     "user_id": "456",
-    "email": "premium@test.com",
+    "email": "premium@gmail.com",
     "plan": "Premium",
     "tokens": 250,
     "model": "gemini-2.0-flash"
