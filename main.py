@@ -132,28 +132,64 @@ def get_message_details(service, msg_id):
     headers = payload.get('headers', [])
     subject = ''
     sender = ''
+    to_email = ''
     message_id = ''
     for header in headers:
         if header['name'] == 'Subject':
             subject = header['value']
         if header['name'] == 'From':
             sender = header['value']
+        if header['name'] == 'To':
+            to_email = header['value']
         if header['name'] == 'Message-ID':
             message_id = header['value']
     parts = payload.get('parts', [])
     body = ''
+    
     if parts:
         for part in parts:
             if part['mimeType'] == 'text/plain':
                 data = part['body']['data']
                 body = base64.urlsafe_b64decode(data).decode()
                 break
+
+            elif part['mimeType'] == 'multipart/alternative': #* When email is a reply and it has the default gmail reply format
+                subparts = part.get('parts', [])
+                if subparts:
+                    for subpart in subparts:
+                        if subpart['mimeType'] == 'text/plain':
+                            data = subpart['body']['data']
+                            body = base64.urlsafe_b64decode(data).decode()
+                            body = re.sub(r'<\s*([^\n\r<>]+?)\s*>', lambda m: f"<{m.group(1).strip()}>", body) #* Remove whitespace inside angle brackets
+    
+                            from_email_with_arrows = f"<{sender.split('<')[1].split('>')[0]}>"
+                            to_email_with_arrows = f"<{to_email}>"
+
+                            history_email_with_arrows = find_first_substring(from_email_with_arrows, to_email_with_arrows, body)
+                            body = body[:body.index(history_email_with_arrows) + len(history_email_with_arrows)]
+                            from_regexp = re.compile(rf'^.*{re.escape(history_email_with_arrows)}.*$', re.MULTILINE)
+                            body = from_regexp.sub('', body)
+
+
     else:
         data = payload.get('body', {}).get('data')
         if data:
             body = base64.urlsafe_b64decode(data).decode()
+
     thread_id = msg.get('threadId')
     return subject, sender, body, message_id, thread_id
+
+def find_first_substring(a, b, s):
+    index_a = s.find(a)
+    index_b = s.find(b)
+
+    if index_a == -1:
+        return b
+    if index_b == -1:
+        return a
+
+    return a if index_a < index_b else b
+
 
 def extract_details_from_subject(subject, default_model):
     s = subject.lower()
@@ -210,11 +246,11 @@ def mark_as_progressing(service, msg_id):
 def mark_as_answered(service, msg_id):
     service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_1030359169377715795"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
 
-def ask_AI(model, content, db, thread_id, user_id):
+def ask_AI(model, question, db, thread_id, user_id):
     try:
-        if user_id == 0:
+        if user_id == 0: #* Not registered
             response = client.models.generate_content(
-                model=model, contents=content
+                model=model, contents=question
             )
             if response.text:
                 return response
@@ -225,12 +261,13 @@ def ask_AI(model, content, db, thread_id, user_id):
         if not result:
             print(f"No previous conversation found for thread ID: {thread_id}.")
             response = client.models.generate_content(
-                model=model, contents=content
+                model=model, contents=question
             )
             if response.text:
                 history = []
-                history.append(f"types.Content(role='user', parts=[types.Part(text='{content}')])")
-                history.append(f"types.Content(role='model', parts=[types.Part(text='{response.text}')])")
+                message = {"user": question, "model": response.text} 
+                history.append(message)
+
                 newConvo = { "threadID": thread_id, "user_id": user_id, "history": history, "expireAt": datetime.now() + timedelta(days=7)}
                 db.insert_one(newConvo)
 
@@ -238,34 +275,24 @@ def ask_AI(model, content, db, thread_id, user_id):
             else:
                 print("No answer received from AI.2")
 
-        elif result != None:
-            history = []
-            for part in result["history"]: #! Here is error (result[history] cant be parsed this easy)
-                print(type(part), part)
-                x = eval(part)
+        elif result != None: #* Previous conversation found
+            chat_history = []
+            for message in result["history"]:
+                x = types.Content(role="user", parts=[types.Part(text=message["user"])])
+                y = types.Content(role="model", parts=[types.Part(text=message["model"])])
+                chat_history.append(x)
+                chat_history.append(y)
 
-                #ToDo : separately store all data in db, not this way. (Complete rework of this segment)
-
-                print(x)
-                print(type(x))
-                # y = types.Content(**x)
-                # print(y)
-                # print(type(y))
-                history.append(x)
-
-            print("222")
-            print(history)
-            chat = client.chats.create(model=model, history=history)
-            response = chat.send_message(message=content)
+            chat = client.chats.create(model=model, history=chat_history)
+            response = chat.send_message(question)
+            # print(chat.get_history())
             if response.text:
-                print("333")
-                history[0] = str(history[0])
-                history[1] = str(history[1])
-                history.append(f"types.Content(role='user', text='{content}')")
-                history.append(f"types.Content(role='model', parts=[types.Part(text='{response.text}')])")
+                history = result["history"]
+                message = {"user": question, "model": response.text}
+                history.append(message)
+
                 newValues = { "$set": { "history": history, "expireAt": datetime.now() + timedelta(days=7)}}
-                print("444")
-                db.update_one(result, newValues)
+                db.update_one({"threadID": thread_id}, newValues)
 
                 return response
             else:
