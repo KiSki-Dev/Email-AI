@@ -30,6 +30,8 @@ load_dotenv()
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
+ACTIVE_THREADS = set() #! Prevent multiple Answers from one message
+
 models = {
     "gemini-2.0-flash": {
         "active": True,
@@ -77,6 +79,8 @@ no_messages_count = 0
 
 client = genai.Client(api_key=os.getenv('gemini_API_key'))
 
+gmail_lock = threading.Lock()
+
 def authenticate_gmail():
     creds = None
     if os.path.exists('token.json'):
@@ -101,7 +105,8 @@ def authenticate_gmail():
             x = authenticate_gmail()
             return x
     
-    service = build('gmail', 'v1', credentials=creds) #* Create the Gmail service
+    with gmail_lock:
+        service = build('gmail', 'v1', credentials=creds) #* Create the Gmail service
     if not service:
         sys.exit("Failed to create Gmail service. Please check your credentials and try again.")
     print(f"Gmail service authenticated successfully.")
@@ -122,12 +127,14 @@ def connect_to_mongodb():
     return table
 
 def get_unread_messages(service):
-    results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=5).execute()
+    with gmail_lock:
+        results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=5).execute()
     messages = results.get('messages', [])
     return messages
 
 def get_message_details(service, msg_id):
-    msg = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
+    with gmail_lock:
+        msg = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
     payload = msg.get('payload', {})
     headers = payload.get('headers', [])
     subject = ''
@@ -235,16 +242,20 @@ def count_tokens(content, model):
     return total_tokens
 
 def mark_as_broken(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_55889426924201303"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
+    with gmail_lock:
+        service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_55889426924201303"], 'removeLabelIds': ["Label_5310290292504501863", "UNREAD"]}).execute()
 
 def mark_as_not_registered(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_6688557498746066945"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
+    with gmail_lock:
+        service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_6688557498746066945"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
 
 def mark_as_progressing(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_5310290292504501863"], 'removeLabelIds': ['UNREAD']}).execute()
+    with gmail_lock:
+        service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_5310290292504501863"], 'removeLabelIds': ['UNREAD']}).execute()
 
 def mark_as_answered(service, msg_id):
-    service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_1030359169377715795"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
+    with gmail_lock:
+        service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_1030359169377715795"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
 
 def ask_AI(model, question, db, thread_id, user_id):
     try:
@@ -451,8 +462,9 @@ def send_reply(service, to, subject, thread_id, message_id, message_text, model,
     body = {'raw': raw_message, 'threadId': thread_id}
     
     try:
-        service.users().messages().send(userId='me', body=body).execute()
-        print(f"Replying to '{message_id}' <> '{thread_id}'")
+        with gmail_lock:
+            service.users().messages().send(userId='me', body=body).execute()
+            print(f"Replying to '{message_id}' <> '{thread_id}'")
     except Exception as error:
         print(f'A error happened: {error}')
 
@@ -530,6 +542,8 @@ def handle_message(service, db, message):
         print(f"A error appeared inside handle_message(). {e}")
         mark_as_broken(service, msg_id)
 
+    ACTIVE_THREADS.remove(thread_id)
+
     thread_end_time = time.perf_counter()
     print(f"Thread {threading.current_thread().name} finished in {thread_end_time - thread_start_time:.2f} seconds.")
     print("="*40)
@@ -545,10 +559,19 @@ def main(service, db):
 
     else:
         for message in messages:
-            no_messages_count = 0
-            t = threading.Thread(target=handle_message, name=f'Reply+{message['id']}', args=(service, db, message), daemon=True)
-            t.start()
-            print(f"Thread started: {t.name}. [{time.ctime()}]")
+            if message['threadId'] in ACTIVE_THREADS:
+                print(f"Thread {message['threadId']} is already being processed. Skipping.")
+                mark_as_broken(service, message['id'])
+
+            else:
+                # print(message)
+                no_messages_count = 0
+                ACTIVE_THREADS.add(message['threadId'])
+                t = threading.Thread(target=handle_message, name=f'Reply+{message['threadId']}', args=(service, db, message), daemon=True)
+                t.start()
+                print(f"Thread started: {t.name}. [{time.ctime()}]")
+
+            time.sleep(0.5) #? Sleep to prevent SSL Error: [SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:997) when too many threads are started at once
 
 
 if __name__ == '__main__':
@@ -558,7 +581,15 @@ if __name__ == '__main__':
         # print(service.users().labels().list(userId='me').execute()) #! List all labels
 
         while True:
-            main(service, db)
+            try:
+                main(service, db)
+            except Exception as e:
+                print(f"[{time.ctime()}] Fehler in main(): {e}", file=sys.stderr)
             time.sleep(10)
+                
     except KeyboardInterrupt:
         print(f"\n{"="*70}\nProgram terminated by user.")
+
+    while threading.active_count() > 1: #* Wait for all threads to finish
+        time.sleep(1)
+    print(f"All threads finished. Exiting program.")
