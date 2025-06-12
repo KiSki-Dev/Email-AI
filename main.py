@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 import requests
 import re
 from datetime import datetime, timedelta
-import ast
 
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -31,6 +30,11 @@ load_dotenv()
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
 ACTIVE_THREADS = set() #! Prevent multiple Answers from one message
+
+ALLOWED_FILE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif", 
+                      "application/pdf", "application/x-javascript", "text/javascript", "application/x-python", "text/x-python", "text/plain", "text/html", "text/css", "text/md", "text/csv", "text/xml", "text/rtf",
+                      "audio/wav", "audio/mp3", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac"]
+
 
 models = {
     "gemini-2.0-flash": {
@@ -72,11 +76,6 @@ models = {
 
 no_messages_count = 0
 
-#? LABEL_ANSWERED = 'Label_1030359169377715795'
-#? LABEL_PROGRESSING = 'Label_5310290292504501863'
-#? LABEL_BROKEN = 'Label_55889426924201303'
-#? LABEL_NOT_REGISTERED = 'Label_6688557498746066945'
-
 client = genai.Client(api_key=os.getenv('gemini_API_key'))
 
 gmail_lock = threading.Lock()
@@ -90,7 +89,6 @@ def authenticate_gmail():
     if not creds or not creds.valid:
         try:
             if creds and creds.expired and creds.refresh_token:
-                print(creds.expired, creds.refresh_token)
                 creds.refresh(Request())
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
@@ -152,31 +150,64 @@ def get_message_details(service, msg_id):
             message_id = header['value']
     parts = payload.get('parts', [])
     body = ''
-    
+    attachments = []
+
     if parts:
         for part in parts:
             if part['mimeType'] == 'text/plain':
                 data = part['body']['data']
                 body = base64.urlsafe_b64decode(data).decode()
-                break
 
             elif part['mimeType'] == 'multipart/alternative': #* When email is a reply and it has the default gmail reply format
-                subparts = part.get('parts', [])
-                if subparts:
-                    for subpart in subparts:
-                        if subpart['mimeType'] == 'text/plain':
-                            data = subpart['body']['data']
-                            body = base64.urlsafe_b64decode(data).decode()
-                            body = re.sub(r'<\s*([^\n\r<>]+?)\s*>', lambda m: f"<{m.group(1).strip()}>", body) #* Remove whitespace inside angle brackets
-    
-                            from_email_with_arrows = f"<{sender.split('<')[1].split('>')[0]}>"
-                            to_email_with_arrows = f"<{to_email}>"
+                try:
+                    subparts = part.get('parts', [])
+                    if subparts:
+                        for subpart in subparts:
+                            if subpart['mimeType'] == 'text/plain':
+                                data = subpart['body']['data']
+                                body = base64.urlsafe_b64decode(data).decode()
+                                body = re.sub(r'<\s*([^\n\r<>]+?)\s*>', lambda m: f"<{m.group(1).strip()}>", body) #* Remove whitespace inside angle brackets
+        
+                                from_email_with_arrows = f"<{sender.split('<')[1].split('>')[0]}>"
+                                to_email_with_arrows = f"<{to_email}>"
 
-                            history_email_with_arrows = find_first_substring(from_email_with_arrows, to_email_with_arrows, body)
-                            body = body[:body.index(history_email_with_arrows) + len(history_email_with_arrows)]
-                            from_regexp = re.compile(rf'^.*{re.escape(history_email_with_arrows)}.*$', re.MULTILINE)
-                            body = from_regexp.sub('', body)
+                                is_email_with_history = (sender.split('<')[1].split('>')[0] and from_email_with_arrows in body) or (to_email and to_email_with_arrows in body)
 
+                                if is_email_with_history:
+                                    history_email_with_arrows = find_first_substring(from_email_with_arrows, to_email_with_arrows, body)
+                                    body = body[:body.index(history_email_with_arrows) + len(history_email_with_arrows)]
+                                    from_regexp = re.compile(rf'^.*{re.escape(history_email_with_arrows)}.*$', re.MULTILINE)
+                                    body = from_regexp.sub('', body)
+                                else:
+                                    body = base64.urlsafe_b64decode(data).decode()
+
+                except Exception as e:
+                    print(f"Error processing multipart/alternative: {e}")
+                    data = part["body"]["data"]
+                    body = base64.urlsafe_b64decode(data).decode()
+
+            elif part['filename']:
+                if 'data' in part['body']:
+                    data = part['body']['data']
+                else:
+                    if part["body"]["size"] < 19900000: #* If the attachment is smaller than 19,90 MB
+                        att_id = part['body']['attachmentId']
+                        with gmail_lock:
+                            att = service.users().messages().attachments().get(userId="me", messageId=msg_id,id=att_id).execute()
+                        data = att['data']
+                    else:
+                        #ToDo: Implement Files API
+                        break
+
+                file_data = base64.urlsafe_b64decode(data.encode('UTF-8'))
+
+                attachment = {
+                    "name": part['filename'],
+                    "size": part['body']['size'],
+                    "mimeType": part['mimeType'],
+                    "data": file_data
+                }
+                attachments.append(attachment)
 
     else:
         data = payload.get('body', {}).get('data')
@@ -184,7 +215,7 @@ def get_message_details(service, msg_id):
             body = base64.urlsafe_b64decode(data).decode()
 
     thread_id = msg.get('threadId')
-    return subject, sender, body, message_id, thread_id
+    return subject, sender, body, message_id, thread_id, attachments
 
 def find_first_substring(a, b, s):
     index_a = s.find(a)
@@ -257,9 +288,9 @@ def mark_as_answered(service, msg_id):
     with gmail_lock:
         service.users().messages().modify(userId='me', id=msg_id, body={'addLabelIds': ["Label_1030359169377715795"], 'removeLabelIds': ["Label_5310290292504501863"]}).execute()
 
-def ask_AI(model, question, db, thread_id, user_id):
+def ask_AI(model, question, attachments, db, thread_id, user_id):
     try:
-        if user_id == 0: #* Not registered
+        if user_id == 0: #* Not registered = Ignore Previous Conversations, Ignore Attachments 
             response = client.models.generate_content(
                 model=model, contents=question
             )
@@ -269,24 +300,45 @@ def ask_AI(model, question, db, thread_id, user_id):
                 print("No answer received from AI.1")
 
         result = db.find_one({"threadID": thread_id})
-        if not result:
+        if not result: #* No previous conversation found 
             print(f"No previous conversation found for thread ID: {thread_id}.")
-            response = client.models.generate_content(
-                model=model, contents=question
-            )
-            if response.text:
-                history = []
-                message = {"user": question, "model": response.text} 
-                history.append(message)
 
-                newConvo = { "threadID": thread_id, "user_id": user_id, "history": history, "expireAt": datetime.now() + timedelta(days=7)}
-                db.insert_one(newConvo)
+            if attachments:
+                attachments_raw = []
+                size = 0
 
-                return response
+                for attachment in attachments:
+                    if attachment["mimeType"] in ALLOWED_FILE_TYPES:
+                        size += attachment["size"]
+                        if size > 19900000: #* If the total size of attachments is larger than 19,90 MB
+                            break
+
+                        x = types.Part.from_bytes(data=attachment["data"], mime_type=attachment["mimeType"],)
+                        attachments_raw.append(x)
+
+                content = [question] + attachments_raw
+                response = client.models.generate_content(model=model, contents=content)
+                if response.text:
+                    return response
+                else :
+                    print("No answer received from AI.2.1")
             else:
-                print("No answer received from AI.2")
+                response = client.models.generate_content(
+                    model=model, contents=question
+                )
+                if response.text:
+                    history = []
+                    message = {"user": question, "model": response.text} 
+                    history.append(message)
 
-        elif result != None: #* Previous conversation found
+                    newConvo = { "threadID": thread_id, "user_id": user_id, "history": history, "expireAt": datetime.now() + timedelta(days=7)}
+                    db.insert_one(newConvo)
+
+                    return response
+                else:
+                    print("No answer received from AI.2.2")
+
+        elif result != None: #* Previous conversation found (but ignore attachments)
             chat_history = []
             for message in result["history"]:
                 x = types.Content(role="user", parts=[types.Part(text=message["user"])])
@@ -477,7 +529,7 @@ def handle_message(service, db, message):
     try:
         mark_as_progressing(service, msg_id)
 
-        subject, sender, body, message_id, thread_id = get_message_details(service, msg_id)
+        subject, sender, body, message_id, thread_id, attachments = get_message_details(service, msg_id)
         sender = sender.split('<')[1].split('>')[0]
 
         #ToDo Implement Database
@@ -525,7 +577,7 @@ def handle_message(service, db, message):
         
         #* Give input to AI and receive answer
         ai_start_time = time.perf_counter()
-        answer = ask_AI(model, body, db, thread_id, user["user_id"] if user else 0)
+        answer = ask_AI(model, body, attachments, db, thread_id, user["user_id"] if user else 0)
         if not answer:
             print(f"Error: No answer generated for message {msg_id}.")
             mark_as_broken(service, msg_id)
@@ -589,7 +641,3 @@ if __name__ == '__main__':
                 
     except KeyboardInterrupt:
         print(f"\n{"="*70}\nProgram terminated by user.")
-
-    while threading.active_count() > 1: #* Wait for all threads to finish
-        time.sleep(1)
-    print(f"All threads finished. Exiting program.")
