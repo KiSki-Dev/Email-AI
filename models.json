@@ -1,0 +1,37 @@
+{
+      "gemini-2.0-flash": {
+        "active": true,
+        "name": "Google Gemini 2.0 Flash",
+        "perm_level_required": 0,
+        "context_per_hour": 1000000,
+        "search_per_hour": 500
+    },
+    "gemini-2.5-flash-preview-05-20": {
+        "active": true,
+        "name": "Google Gemini 2.5 Flash Preview",
+        "perm_level_required": 1,
+        "context_per_hour": 0,
+        "search_per_hour": 500
+    },
+    "gemini-2.5-pro-preview-05-06": {
+        "active": false,
+        "name": "Google Gemini 2.5 Pro Preview",
+        "perm_level_required": 2,
+        "context_per_hour": 0,
+        "search_per_hour": 0
+    },
+    "gemini-1.5-flash": {
+        "active": true,
+        "name": "Google Gemini 1.5 Flash",
+        "perm_level_required": 0,
+        "context_per_hour": 1000000,
+        "search_per_hour": 0
+    },
+    "gemini-1.5-pro": {
+        "active": true,
+        "name": "Google Gemini 1.5 Pro",
+        "perm_level_required": 0,
+        "context_per_hour": 0,
+        "search_per_hour": 0
+    }
+}
